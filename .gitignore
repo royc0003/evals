@@ -1,0 +1,7 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Bulky eval outputs (results/summary.md stays tracked)
+results/raw/
