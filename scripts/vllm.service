@@ -1,0 +1,23 @@
+# systemd unit for the vLLM OpenAI-compatible server.
+# Install: sudo cp scripts/vllm.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now vllm
+# The endpoint is unauthenticated by design: it binds to loopback only
+# and is reached via SSH tunnel. See docs/lambda-hosting.md.
+[Unit]
+Description=vLLM OpenAI-compatible server (Qwen3.5 9B)
+After=network.target
+
+[Service]
+User=ubuntu
+Environment=HF_HOME=/home/ubuntu/evals-storage/hf-cache
+ExecStart=/home/ubuntu/vllm-env/bin/vllm serve Qwen/Qwen3.5-9B \
+  --served-model-name qwen3.5-9b \
+  --host 127.0.0.1 \
+  --max-model-len 131072 \
+  --gpu-memory-utilization 0.92 \
+  --port 8000
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

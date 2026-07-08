@@ -1,0 +1,12 @@
+# Phase 3 record: nothing consumes this file until the agentic evals.
+benchmark: terminal-bench-2.1
+harness: terminal-bench  # tb CLI; record the exact version at first run
+agent: terminus
+model: openai/qwen3.5-9b
+n_concurrent: 4
+reference:
+  glm_5_2_reported: 81.0  # Terminus-2 harness run
+notes: >-
+  Run on the Lambda instance (needs Docker and endpoint proximity).
+  Use reduced episode and timeout budgets compared to the GLM-5.2 run,
+  and pilot on 3-5 tasks with --task-id before a full overnight run.

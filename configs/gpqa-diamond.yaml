@@ -1,0 +1,15 @@
+# First eval to run: 198 questions, fastest full-pipeline validation.
+benchmark: gpqa-diamond
+harness: lm-eval-harness  # record the exact version on the first run
+task: gpqa_diamond_zeroshot
+generation:
+  temperature: 0.6
+  top_p: 0.95
+  max_gen_toks: 32768
+num_concurrent: 8
+reference:
+  glm_5_2_reported: 91.2
+notes: >-
+  Rule-based answer extraction, stricter than judge-based grading.
+  Gated dataset: accept the terms on Hugging Face and set HF_TOKEN.
+  Pilot with --limit 5 and read the logged samples before a full run.

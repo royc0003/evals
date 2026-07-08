@@ -1,0 +1,5 @@
+# The only two values to change when pointing the pipeline at a
+# different model. The endpoint is unauthenticated and stays private
+# (loopback bind + SSH tunnel); see docs/lambda-hosting.md.
+base_url: http://localhost:8000/v1
+model: qwen3.5-9b
