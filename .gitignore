@@ -5,3 +5,4 @@ __pycache__/
 
 # Bulky eval outputs (results/summary.md stays tracked)
 results/raw/
+publickey.txt

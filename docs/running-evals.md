@@ -36,57 +36,43 @@ uv run scripts/check_endpoint.py
 Expect: `models endpoint OK` and a `pong` reply. If it fails, see
 Troubleshooting below.
 
-**3. Pilot run** (5 questions, a few minutes - always do this first):
+**3. Pilot run** (first 3 problems, a few minutes - always do this first):
 
 ```bash
-uvx --from "lm-eval[api]" lm_eval \
-  --model local-chat-completions \
-  --model_args "model=qwen3.5-9b,base_url=http://localhost:8000/v1/chat/completions,num_concurrent=4" \
-  --tasks aime26 --include_path tasks/aime26 \
-  --apply_chat_template \
-  --gen_kwargs "temperature=0.6,top_p=0.95,max_gen_toks=32768" \
-  --limit 3 --log_samples --output_path results/raw/aime-pilot/
+uv run scripts/run_eval.py configs/aime.yaml --limit 3
 ```
 
-Skim the `samples_*.jsonl` it writes: answers should end with a clear
-choice and the score fields should not be empty.
+Skim the `samples_*.jsonl` under the printed output path: answers
+should contain `\boxed{...}` and the score fields should not all be
+zero. A 0-score pilot usually means an extraction problem, not a bad
+model - read the samples before believing any number.
 
 **4. Full run** (AIME is 30 problems; expect tens of minutes - hard
 problems think for a long time):
 
 ```bash
-uvx --from "lm-eval[api]" lm_eval \
-  --model local-chat-completions \
-  --model_args "model=qwen3.5-9b,base_url=http://localhost:8000/v1/chat/completions,num_concurrent=8" \
-  --tasks aime26 --include_path tasks/aime26 \
-  --apply_chat_template \
-  --gen_kwargs "temperature=0.6,top_p=0.95,max_gen_toks=32768" \
-  --log_samples --output_path results/raw/aime-$(date +%Y-%m-%d)/
+uv run scripts/run_eval.py configs/aime.yaml
 ```
 
-The score prints at the end.
+The score prints at the end; results land in
+`results/raw/<benchmark>-<timestamp>/` automatically.
 
 **5. Record it:** add a row to `results/summary.md` with the score,
 settings, and date.
 
 ## Running a different benchmark
 
-The command never changes shape; only the values do, and every value
-comes from that benchmark's YAML in `configs/`. The mapping:
+Point the runner at a different config:
 
-| In the command | Comes from |
-|---|---|
-| `model=...` and `base_url=...` in `--model_args` | `configs/endpoint.yaml` |
-| `num_concurrent=...` in `--model_args` | `num_concurrent` in the benchmark YAML |
-| `--tasks ...` | `task` in the benchmark YAML |
-| `--gen_kwargs "temperature=...,top_p=...,max_gen_toks=..."` | the `generation:` block |
-| `--output_path results/raw/<benchmark>-<date>/` | the `benchmark` name |
+```bash
+uv run scripts/run_eval.py configs/<benchmark>.yaml
+```
 
-So to run another benchmark: open its YAML under `configs/`, and swap
-the values in - task name, generation block, new output path. That's
-the whole procedure. The YAMLs exist so that two people running
-"the AIME eval" a month apart use identical settings and their numbers
-compare fairly; if you change a setting, change it in the YAML first.
+The config is the single source of truth: the runner builds the whole
+lm-eval command from it (`--dry-run` prints the command without running
+it). To change a setting, edit the YAML - never tweak flags ad hoc, or
+the scoreboard stops being reproducible. The config format is
+documented field by field in the top-level [README](../README.md).
 
 Two practical notes:
 
@@ -96,16 +82,16 @@ Two practical notes:
 - **When the harness doesn't have the task** (like AIME 2026): define
   it yourself under `tasks/<name>/` - copy the closest built-in task
   YAML, swap the `dataset_path` to a Hugging Face dataset with the
-  right schema, and pass `--include_path tasks/<name>` when running.
-  `tasks/aime26/` is the worked example.
+  right schema, and set `include_path: tasks/<name>` in the benchmark
+  config. `tasks/aime26/` is the worked example.
 - **Chat endpoints need generative tasks.** Task variants scored by
   token probabilities (plain multiple-choice, names without `cot`/
   `generative`) fail with `Loglikelihood is not supported`. Check the
   task's output type with `lm-eval ls tasks` (want `generate_until`).
 
-For benchmarks with a different `harness:` in their YAML (e.g.
-`terminal-bench`), the lm_eval command doesn't apply at all - those are
-Phase 3 tools with their own CLIs, run on the GPU node; see
+For benchmarks whose config declares a different `harness:` (e.g.
+`terminal-bench`), the runner refuses on purpose - those are Phase 3
+tools with their own CLIs, run on the GPU node; see
 [eval-setup-plan.md](eval-setup-plan.md).
 
 ## Evaluating your own weights (e.g. a LoRA)
@@ -115,8 +101,8 @@ Phase 3 tools with their own CLIs, run on the GPU node; see
    `/etc/systemd/system/vllm.service`:
    `--enable-lora --lora-modules my-lora=/home/ubuntu/checkpoints/my-lora \`
    then `sudo systemctl daemon-reload && sudo systemctl restart vllm`.
-3. Rerun steps 2-5 with `model=my-lora` in `--model_args` (and in
-   `configs/endpoint.yaml`).
+3. Set `model: my-lora` in `configs/endpoint.yaml`, then rerun
+   steps 2-5 unchanged - the runner picks the new name up from there.
 
 ## Troubleshooting
 

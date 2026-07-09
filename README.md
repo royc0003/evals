@@ -18,6 +18,7 @@ evals/
 │   ├── aime.yaml
 │   └── terminal-bench.yaml
 ├── scripts/
+│   ├── run_eval.py           THE entry point: runs an eval from its config
 │   ├── check_endpoint.py     smoke test: is the endpoint answering?
 │   ├── provision-lambda.sh   set up a fresh Lambda GPU node
 │   └── vllm.service          systemd unit that runs the vLLM server
@@ -34,9 +35,28 @@ evals/
     └── glm-5.2-benchmark-research.md what GLM-5.2 reported, and how
 ```
 
+## Running an eval
+
+Every eval runs from its config file - no hand-assembled commands:
+
+```bash
+uv run scripts/run_eval.py configs/aime.yaml --limit 3   # pilot (first 3)
+uv run scripts/run_eval.py configs/aime.yaml             # full run
+uv run scripts/run_eval.py configs/aime.yaml --dry-run   # show the command
+```
+
+The runner reads `configs/endpoint.yaml` plus the benchmark YAML,
+builds the lm-eval command, and writes output to
+`results/raw/<benchmark>-<timestamp>/` automatically (pilots get
+`-pilot-` in the name). You never specify an output path.
+
+While a run is in flight the runner shows a spinner with elapsed time;
+the harness's full log streams to `run.log` inside the results folder,
+and the score table prints when it finishes.
+
 ## How evals are configured
 
-Two kinds of YAML under `configs/`, both plain values with no logic:
+Two kinds of YAML under `configs/`; the runner consumes both.
 
 **`endpoint.yaml` - where the model is.** The only file you touch to
 evaluate a different model:
@@ -46,29 +66,33 @@ base_url: http://localhost:8000/v1   # the endpoint (via SSH tunnel)
 model: qwen3.5-9b                    # served model name (or your LoRA name)
 ```
 
-**One file per benchmark - how that eval runs.** Each records
-everything needed to reproduce and compare runs fairly:
+**One file per benchmark - how that eval runs.** Field by field:
 
 ```yaml
-benchmark: gpqa-diamond
-harness: lm-eval-harness         # which tool runs it (+ version, at first run)
-task: gpqa_diamond_cot_zeroshot  # exact task name inside the harness
-generation:                      # sampling settings passed via --gen_kwargs
+benchmark: aime            # names the run and its results directory
+harness: lm-eval-harness   # must be lm-eval-harness for the runner;
+                           # agentic harnesses run on the GPU node instead
+task: aime26               # exact task name inside lm-eval
+include_path: tasks/aime26 # optional: repo-local task definition dir
+generation:                # passed through as --gen_kwargs, verbatim
   temperature: 0.6
   top_p: 0.95
   max_gen_toks: 32768
-num_concurrent: 8                # parallel requests against the endpoint
+num_concurrent: 8          # parallel requests (optional, default 4)
 reference:
-  glm_5_2_reported: 91.2         # the number we compare against
-notes: >-                        # methodology deviations, gotchas
-  Rule-based answer extraction; gated HF dataset needs accepted terms.
+  glm_5_2_reported: 99.2   # the number we compare against (not used by
+                           # the runner; provenance for the scoreboard)
+notes: >-                  # methodology deviations, gotchas
+  No LLM judge; boxed-answer prompt added vs the built-in aime25 task.
 ```
 
 To add a new benchmark: copy the closest existing YAML, change
-`benchmark`, `task`, and `reference`, and note anything unusual in
-`notes`. The values map straight onto harness flags (`--tasks`,
-`--gen_kwargs`, `num_concurrent` in `--model_args`) as shown in the
-runbook. The YAMLs are the source of truth; the commands quote them.
+`benchmark`, `task`, and `reference`, and run it. If lm-eval doesn't
+ship the task, define it under `tasks/<name>/` and point
+`include_path` at it (see `tasks/aime26/` for the worked example).
+The config is the single source of truth: change settings there, never
+in ad-hoc commands, so every number in `results/summary.md` is
+reproducible from the YAML that produced it.
 
 ## Everything else
 
