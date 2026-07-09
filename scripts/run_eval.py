@@ -14,8 +14,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import itertools
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn
@@ -111,6 +113,42 @@ def build_command(
     return command
 
 
+def run_with_spinner(command: list[str], log_path: Path) -> int:
+    """Run the command with a live spinner; log output to a file.
+
+    Falls back to plain streaming when stdout is not a terminal, so
+    backgrounded runs keep their full log on stdout instead.
+    """
+    if not sys.stdout.isatty():
+        return subprocess.run(command, check=False, cwd=REPO_ROOT).returncode
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    frames = itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+    start = time.monotonic()
+    with log_path.open("w") as log:
+        process = subprocess.Popen(
+            command, stdout=log, stderr=subprocess.STDOUT, cwd=REPO_ROOT
+        )
+        try:
+            while process.poll() is None:
+                minutes, seconds = divmod(int(time.monotonic() - start), 60)
+                sys.stdout.write(
+                    f"\r{next(frames)} evaluating... {minutes:02d}:"
+                    f"{seconds:02d} elapsed (log: {log_path})"
+                )
+                sys.stdout.flush()
+                time.sleep(0.2)
+        except KeyboardInterrupt:
+            process.terminate()
+            process.wait()
+            sys.stdout.write("\ninterrupted\n")
+            return 130
+    sys.stdout.write("\r" + " " * 100 + "\r")
+    tail = log_path.read_text().splitlines()[-8:]
+    print("\n".join(tail))
+    return process.returncode
+
+
 def main() -> int:
     """Parse arguments, build the command, and run the eval."""
     parser = argparse.ArgumentParser(
@@ -149,10 +187,10 @@ def main() -> int:
     if args.dry_run:
         return 0
 
-    completed = subprocess.run(command, check=False, cwd=REPO_ROOT)
-    if completed.returncode == 0:
+    returncode = run_with_spinner(command, output_path / "run.log")
+    if returncode == 0:
         print(f"results written to {output_path}")
-    return completed.returncode
+    return returncode
 
 
 if __name__ == "__main__":
