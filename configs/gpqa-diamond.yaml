@@ -1,4 +1,5 @@
-# First eval to run: 198 questions, fastest full-pipeline validation.
+# RETIRED (2026-07-08): GPQA is not usable for this project. Kept for
+# reference only - do not run. The primary reasoning eval is aime.yaml.
 benchmark: gpqa-diamond
 harness: lm-eval-harness  # record the exact version on the first run
 task: gpqa_diamond_cot_zeroshot  # generative; loglikelihood variants don't work over chat APIs

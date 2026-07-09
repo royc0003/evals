@@ -1,6 +1,10 @@
+# Primary reasoning eval: 30 competition math problems, public dataset,
+# no gating, rule-based numeric answer matching. Same exam year as the
+# GLM-5.2 blogpost.
 benchmark: aime
 harness: lm-eval-harness  # record the exact version on the first run
-task: aime2025  # switch to the 2026 task once the harness ships it
+task: aime26  # repo-local task in tasks/aime26/, via --include_path
+include_path: tasks/aime26
 generation:
   temperature: 0.6
   top_p: 0.95
@@ -9,6 +13,6 @@ num_concurrent: 8
 reference:
   glm_5_2_reported: 99.2  # AIME 2026, graded by GPT-5.5 as judge
 notes: >-
-  No LLM judge locally: rule-based extraction is stricter than the
-  judge used in the GLM-5.2 run. Long reasoning generations dominate
-  runtime; max_gen_toks must fit inside the server's --max-model-len.
+  Dataset math-ai/aime26; task definition mirrors the harness's
+  built-in aime25. One deviation from the GLM-5.2 run: no LLM judge
+  (rule-based boxed-answer extraction, which is stricter).

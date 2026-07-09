@@ -21,6 +21,8 @@ evals/
 │   ├── check_endpoint.py     smoke test: is the endpoint answering?
 │   ├── provision-lambda.sh   set up a fresh Lambda GPU node
 │   └── vllm.service          systemd unit that runs the vLLM server
+├── tasks/               repo-local task definitions the harness lacks
+│   └── aime26/          AIME 2026 (used via --include_path)
 ├── results/
 │   ├── summary.md       the scoreboard (tracked in git)
 │   └── raw/             full harness outputs (gitignored, bulky)
