@@ -50,6 +50,10 @@ builds the lm-eval command, and writes output to
 `results/raw/<benchmark>-<timestamp>/` automatically (pilots get
 `-pilot-` in the name). You never specify an output path.
 
+While a run is in flight the runner shows a spinner with elapsed time;
+the harness's full log streams to `run.log` inside the results folder,
+and the score table prints when it finishes.
+
 ## How evals are configured
 
 Two kinds of YAML under `configs/`; the runner consumes both.
