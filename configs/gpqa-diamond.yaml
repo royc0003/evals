@@ -1,7 +1,7 @@
 # First eval to run: 198 questions, fastest full-pipeline validation.
 benchmark: gpqa-diamond
 harness: lm-eval-harness  # record the exact version on the first run
-task: gpqa_diamond_zeroshot
+task: gpqa_diamond_cot_zeroshot  # generative; loglikelihood variants don't work over chat APIs
 generation:
   temperature: 0.6
   top_p: 0.95
