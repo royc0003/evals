@@ -14,5 +14,9 @@ reference:
   glm_5_2_reported: 99.2  # AIME 2026, graded by GPT-5.5 as judge
 notes: >-
   Dataset math-ai/aime26; task definition mirrors the harness's
-  built-in aime25. One deviation from the GLM-5.2 run: no LLM judge
-  (rule-based boxed-answer extraction, which is stricter).
+  built-in aime25, plus an explicit "put your final answer within
+  boxed{}" instruction (without it the model answers unboxed and the
+  grader scores 0). Grading differs from the GLM-5.2 run: they used
+  GPT-5.5 as an answer judge, we use rule-based boxed-answer
+  extraction, which is stricter (correct-but-unusually-formatted
+  answers score 0 for us that a judge would accept).
