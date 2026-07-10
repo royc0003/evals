@@ -23,6 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = REPO_ROOT / "configs" / "endpoint.yaml"
 TIMEOUT_SECONDS = 60.0
 PROMPT = "Reply with the single word: pong"
+MAX_OUTPUT_TOKENS = 163840
 
 
 def fail(message: str, hint: str) -> NoReturn:
@@ -75,13 +76,18 @@ def check_models(client: httpx.Client, base_url: str) -> None:
     print("models endpoint OK")
 
 
-def request_completion(client: httpx.Client, base_url: str, model: str) -> str:
-    """Send one short chat completion and return the reply text."""
-    payload = {
+def build_completion_payload(model: str) -> dict[str, object]:
+    """Return a short request using the canonical maximum output cap."""
+    return {
         "model": model,
         "messages": [{"role": "user", "content": PROMPT}],
-        "max_tokens": 512,
+        "max_tokens": MAX_OUTPUT_TOKENS,
     }
+
+
+def request_completion(client: httpx.Client, base_url: str, model: str) -> str:
+    """Send one short chat completion and return the reply text."""
+    payload = build_completion_payload(model)
     try:
         response = client.post(f"{base_url}/chat/completions", json=payload)
     except httpx.HTTPError as exc:

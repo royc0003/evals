@@ -1,5 +1,14 @@
-# The only two values to change when pointing the pipeline at a
-# different model. The endpoint is unauthenticated and stays private
-# (loopback bind + SSH tunnel); see docs/lambda-hosting.md.
+# Canonical endpoint and serving provenance for the AIME investor run.
+# The endpoint is unauthenticated and stays private through the loopback
+# bind; remote clients reach it through an SSH tunnel.
 base_url: http://localhost:8000/v1
 model: qwen3.5-9b
+source_model: Qwen/Qwen3.5-9B
+model_revision: c202236235762e1c871ad0ccb60c8ee5ba337b9a
+serving:
+  expected_vllm_version: 0.24.0
+  gpu: H100 80GB
+  gpus_used: 1
+  dtype: bfloat16
+  tensor_parallel_size: 1
+  max_model_len: 262144

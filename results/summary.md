@@ -1,16 +1,20 @@
 # Results Summary
 
-Scores here are directional, not apples-to-apples: GLM-5.2 is a 753B
-model evaluated with 256K-1M contexts and, in places, LLM judges. The
-point is a repeatable pipeline; record every methodology deviation.
+Only validated canonical runs belong in this table. Pilot results are
+diagnostics and must not be copied into investor materials.
 
-| Benchmark | Qwen3.5-9B (ours) | GLM-5.2 (reported) | Harness + version | Our settings | Deviations from GLM methodology |
-|---|---|---|---|---|---|
-| AIME 2026 | - | 99.2 | - | - | no LLM judge (rule-based extraction); repo-local task tasks/aime26 |
-| HMMT Nov 2025 | - | 94.4 | - | - | - |
-| HMMT Feb 2026 | - | 92.5 | - | - | - |
-| Terminal-Bench 2.1 | - | 81.0 (Terminus-2) | - | - | reduced episode/timeout budgets |
-| SWE-bench Verified | - | n/a (Pro: 62.1) | - | - | different subset than Pro |
+| Benchmark | Model | Ours | GLM-5.2 reported | Attempts | Grading | Max output | Context | Truncated |
+|---|---|---:|---:|---:|---|---:|---:|---:|
 
-Raw harness outputs go in `results/raw/<benchmark>/<date>/` (gitignored)
-together with a copy of the exact config used for the run.
+> **Methodology disclosure:** GLM-5.2's AIME 2026 score of 99.2 is
+> self-reported by Z.ai. GLM used GPT-5.5-medium as an answer judge but did not
+> disclose attempts per question or its aggregation method. Our evaluation
+> uses deterministic rule-based numeric grading and reports avg@16 across 30
+> questions and 480 completions. Invalid, missing, failed, and truncated
+> answers are scored incorrect. Our run uses no tools, temperature 1.0,
+> top-p 0.95, a 163,840-token maximum output, and a 262,144-token context
+> window. Our structured response prompt mirrors GLM's disclosed three-field
+> format. Consequently, the scores are directionally comparable but not
+> methodologically identical.
+
+No canonical AIME 2026 run has been recorded yet.
