@@ -1,35 +1,40 @@
-# Repo-local task: AIME 2026, matching the GLM-5.2 blogpost eval year.
-# The installed lm-eval only ships aime24/aime25; this mirrors the
-# built-in aime25 task with the dataset swapped to math-ai/aime26
-# (same maintainer and schema). Grading logic (utils.py) is copied
-# verbatim from the harness. Use via: --include_path tasks/aime26
-tag:
-  - math_word_problems
+# Repo-local AIME 2026 task. The system prompt is supplied by the runner.
 task: aime26
 dataset_path: math-ai/aime26
+dataset_kwargs:
+  revision: 79037aebdb6580008fb960d17cb21fd3099083e3
 output_type: generate_until
 training_split: test
 fewshot_split: test
 test_split: test
-# The boxed instruction is added vs the built-in aime25 prompt: this
-# model ends with "Answer: N" otherwise, which the grader can't parse.
-doc_to_text: "Question: {{problem}}\nPlease reason step by step, and put your final answer within \\boxed{}.\nAnswer:"
+doc_to_text: "{{problem}}"
 doc_to_target: "{{answer}}"
 process_results: !function utils.process_results
 metric_list:
-  - metric: exact_match
+  - metric: avg_at_16
     aggregation: mean
     higher_is_better: true
+  - metric: pass_at_16
+    aggregation: mean
+    higher_is_better: true
+  - metric: number_of_attempts
+    aggregation: mean
+    higher_is_better: false
 generation_kwargs:
   until:
-    - "Question:"
     - "</s>"
     - "<|im_end|>"
     - "<|eot_id|>"
-  do_sample: false
-  temperature: 0.0
-  max_gen_toks: 32768
-repeats: 1
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 163840
+repeats: 16
+filter_list:
+  - name: all_attempts
+    filter:
+      - function: take_first_k
+        k: 16
 num_fewshot: 0
 metadata:
-  version: 0.0
+  version: 1.0

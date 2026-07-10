@@ -4,9 +4,7 @@ Follow these steps in order. Every command is copy-paste ready.
 
 ## One-time setup (skip if done)
 
-1. Get SSH access: someone with access adds your `~/.ssh/id_ed25519.pub`
-   line to the node's `~/.ssh/authorized_keys`.
-2. Get a free Hugging Face token (huggingface.co/settings/tokens), then:
+1. Get a free Hugging Face token (huggingface.co/settings/tokens), then:
 
    ```bash
    uvx --from "huggingface_hub[cli]" hf auth login --token hf_YOUR_TOKEN
@@ -15,17 +13,57 @@ Follow these steps in order. Every command is copy-paste ready.
    (AIME is ungated; only some datasets additionally require accepting
    terms on their HF page while logged in.)
 
-3. Clone this repo and run `uv sync` inside it.
+2. Clone this repo and run `uv sync` inside it.
+3. From your local checkout, deploy the checked-in systemd unit to an existing
+   GPU node:
+
+   ```bash
+   ./scripts/deploy-vllm-service.sh ubuntu@192.222.52.206
+   ```
+
+   The command verifies or installs vLLM 0.24.0 on the remote node, copies and
+   restarts the service over SSH, and waits up to 15 minutes for health. Put
+   non-default keys, ports, or jump hosts in your SSH configuration. The unit
+   starts Qwen3.5-9B at the pinned revision with BF16, tensor parallel size 1,
+   and a 262,144-token context limit.
+
+   For a truly fresh node that also needs cache and Docker setup, clone the
+   repository there and run `bash scripts/provision-lambda.sh` on that node
+   instead.
+
+4. The deployment command performs the health check. To inspect the pinned
+   context independently, run:
+
+   ```bash
+   ssh ubuntu@192.222.52.206 \
+     "journalctl -u vllm -b --no-pager | grep 'Using max model len 262144'"
+   ```
+
+## Where the runner can execute
+
+The harness can run on your laptop, a Lambda CPU node, or the GPU node. It
+only sends HTTP requests and grades the returned text; it does not need a GPU.
+
+The checked-in service intentionally listens only on the GPU node's loopback
+interface. Therefore:
+
+- on the GPU node, run the evaluator directly against `localhost:8000`;
+- on another machine, use an SSH tunnel or an equivalently secured network
+  path.
+
+SSH is a transport choice for the current private endpoint, not a requirement
+of lm-eval or of this repository.
 
 ## Every session
 
-**1. Open the tunnel** (makes the GPU node's endpoint appear on your laptop):
+**1. Open the tunnel when running somewhere other than the GPU node:**
 
 ```bash
 ssh -N -f -L 8000:localhost:8000 ubuntu@192.222.52.206
 ```
 
-"Address already in use" = a tunnel is already open. That's fine, move on.
+"Address already in use" usually means a tunnel is already open. Skip this
+step when the repository is running directly on the GPU node.
 
 **2. Smoke test:**
 
@@ -33,32 +71,37 @@ ssh -N -f -L 8000:localhost:8000 ubuntu@192.222.52.206
 uv run scripts/check_endpoint.py
 ```
 
-Expect: `models endpoint OK` and a `pong` reply. If it fails, see
-Troubleshooting below.
+Expect: `models endpoint OK` and a `pong` reply. The request deliberately sets
+`max_tokens=163840`; the short response proves that the server accepts the
+cap, not that it will generate that many tokens.
 
-**3. Pilot run** (first 3 problems, a few minutes - always do this first):
+**3. Pilot run** (first 3 problems × 16 attempts; always do this first):
 
 ```bash
 uv run scripts/run_eval.py configs/aime.yaml --limit 3
 ```
 
-Skim the `samples_*.jsonl` under the printed output path: answers
-should contain `\boxed{...}` and the score fields should not all be
-zero. A 0-score pilot usually means an extraction problem, not a bad
-model - read the samples before believing any number.
+Inspect `attempts.jsonl`, `manifest.json`, and `report.md` in the printed run
+directory. Verify that each selected question has 16 records, seeds 2026
+through 2041, no transport failures, and at least one non-trivial problem has
+more than one unique response. The report is labeled `NON-CANONICAL PILOT` and
+must not be used in the investor score table.
 
-**4. Full run** (AIME is 30 problems; expect tens of minutes - hard
-problems think for a long time):
+**4. Full run** (30 problems × 16 attempts = 480 completions):
 
 ```bash
 uv run scripts/run_eval.py configs/aime.yaml
 ```
 
-The score prints at the end; results land in
-`results/raw/<benchmark>-<timestamp>/` automatically.
+The cap is 163,840 output tokens, not a target. Runtime depends on the actual
+thinking lengths and can be hours. The runner writes the raw harness result,
+raw attempts, log, resolved config, manifest, and Markdown report under
+`results/raw/<benchmark>-<timestamp>/`.
 
-**5. Record it:** add a row to `results/summary.md` with the score,
-settings, and date.
+**5. Record it:** only after the manifest validates all 30 questions and 480
+attempts, add the canonical `avg@16` row to `results/summary.md`. Copy the
+methodology disclosure with the score. Report `pass@16` only as the linked
+best-of-16 secondary metric.
 
 ## Running a different benchmark
 
@@ -76,9 +119,9 @@ documented field by field in the top-level [README](../README.md).
 
 Two practical notes:
 
-- **Finding the exact task name:** the `task:` field must match a task
-  the harness knows. List candidates with
-  `uvx --from "lm-eval[api]" lm-eval ls tasks | grep -i aime`.
+- **Finding the exact task name:** the `task:` field must match a task the
+  harness knows. List candidates with
+  `uv run lm-eval ls tasks | grep -i aime`.
 - **When the harness doesn't have the task** (like AIME 2026): define
   it yourself under `tasks/<name>/` - copy the closest built-in task
   YAML, swap the `dataset_path` to a Hugging Face dataset with the
@@ -94,15 +137,15 @@ For benchmarks whose config declares a different `harness:` (e.g.
 tools with their own CLIs, run on the GPU node; see
 [eval-setup-plan.md](eval-setup-plan.md).
 
-## Evaluating your own weights (e.g. a LoRA)
+## Evaluating other weights
 
-1. Copy them up: `rsync -avz ./my-lora/ ubuntu@192.222.52.206:checkpoints/my-lora/`
-2. On the node, add to the ExecStart block of
-   `/etc/systemd/system/vllm.service`:
-   `--enable-lora --lora-modules my-lora=/home/ubuntu/checkpoints/my-lora \`
-   then `sudo systemctl daemon-reload && sudo systemctl restart vllm`.
-3. Set `model: my-lora` in `configs/endpoint.yaml`, then rerun
-   steps 2-5 unchanged - the runner picks the new name up from there.
+The canonical AIME command intentionally rejects a different model identity,
+revision, context, or serving topology. Do not overwrite those fields and
+reuse the investor protocol label for a LoRA or another checkpoint. Keep
+`configs/aime.yaml` unchanged, copy
+`configs/endpoint-finetuned.example.yaml`, and select the copy with
+`--endpoint-config`. The top-level README documents merged weights, LoRA
+serving, the endpoint YAML, and the pilot-to-full-run workflow.
 
 ## Troubleshooting
 
@@ -110,6 +153,8 @@ tools with their own CLIs, run on the GPU node; see
 |---|---|
 | `Connection refused` | tunnel not open - do step 1 |
 | `Connection reset by peer` | vLLM still starting or crashed - `ssh ubuntu@192.222.52.206 'journalctl -u vllm -n 30'`; first start after a change can take minutes |
-| reply contains `Thinking Process` / `</think>` | server missing `--reasoning-parser qwen3` - fix the unit, restart vllm |
+| reply contains `Thinking Process` / `</think>` | server missing `--reasoning-parser qwen3` - fix the checked-in unit and redeploy it |
+| server rejects `max_tokens=163840` | checked-in service has not been deployed, or startup did not use `--max-model-len 262144` |
+| manifest reports missing response metadata | do not publish the score; confirm the tracked adapter is selected in the dry-run command |
 | 403 downloading a dataset | it's gated - log in on HF, accept the terms on its dataset page |
 | `Loglikelihood is not supported` | wrong task variant - use the `_cot_zeroshot` (generative) task names |

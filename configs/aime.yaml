@@ -1,22 +1,28 @@
-# Primary reasoning eval: 30 competition math problems, public dataset,
-# no gating, rule-based numeric answer matching. Same exam year as the
-# GLM-5.2 blogpost.
+# Canonical AIME 2026 protocol for the GLM-aligned investor comparison.
 benchmark: aime
-harness: lm-eval-harness  # record the exact version on the first run
-task: aime26  # repo-local task in tasks/aime26/, via --include_path
+harness: lm-eval-harness
+harness_version: 0.4.12
+task: aime26
 include_path: tasks/aime26
+dataset: math-ai/aime26
+dataset_revision: 79037aebdb6580008fb960d17cb21fd3099083e3
+system_instruction: |-
+  Respond using exactly these fields:
+  Explanation: <your reasoning>
+  Exact Answer: <your final integer>
+  Confidence: <a percentage from 0% through 100%>
 generation:
-  temperature: 0.6
+  temperature: 1.0
   top_p: 0.95
-  max_gen_toks: 32768
+  max_gen_toks: 163840
+attempts_per_problem: 16
 num_concurrent: 8
+base_seed: 2026
+max_retries: 3  # after the initial transport; still one logical attempt
+grading: rule_based_integer
 reference:
-  glm_5_2_reported: 99.2  # AIME 2026, graded by GPT-5.5 as judge
+  glm_5_2_reported: 99.2
 notes: >-
-  Dataset math-ai/aime26; task definition mirrors the harness's
-  built-in aime25, plus an explicit "put your final answer within
-  boxed{}" instruction (without it the model answers unboxed and the
-  grader scores 0). Grading differs from the GLM-5.2 run: they used
-  GPT-5.5 as an answer judge, we use rule-based boxed-answer
-  extraction, which is stricter (correct-but-unusually-formatted
-  answers score 0 for us that a judge would accept).
+  GLM used GPT-5.5-medium as an answer judge and did not disclose its attempt
+  count or aggregation method. This protocol uses deterministic integer
+  grading and explicitly reports avg@16 and pass@16.
