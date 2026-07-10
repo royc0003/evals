@@ -15,6 +15,7 @@ evals/
 ├── evals/               tracked vLLM adapter + report generation
 ├── configs/             one YAML per benchmark + the endpoint config
 │   ├── endpoint.yaml    where the model lives (base_url + model name)
+│   ├── endpoint-finetuned.example.yaml copyable fine-tuned model profile
 │   ├── gpqa-diamond.yaml
 │   ├── aime.yaml
 │   └── terminal-bench.yaml
@@ -60,8 +61,8 @@ uv run scripts/run_eval.py configs/aime.yaml             # full run
 uv run scripts/run_eval.py configs/aime.yaml --dry-run   # show the command
 ```
 
-The runner reads `configs/endpoint.yaml` plus the benchmark YAML,
-builds the lm-eval command, and writes output to
+The runner reads the selected endpoint YAML plus the benchmark YAML, builds
+the lm-eval command, and writes output to
 `results/raw/<benchmark>-<timestamp>/` automatically (pilots get
 `-pilot-` in the name). You never specify an output path.
 
@@ -78,10 +79,14 @@ path). A runner on the GPU node uses the endpoint directly.
 
 Two kinds of YAML under `configs/`; the runner consumes both.
 
-**`endpoint.yaml` - where the model is.** For the canonical AIME run these
-values stay pinned; exploratory runs must be labeled non-canonical:
+**`endpoint.yaml` - where the model is.** It is the default endpoint. For the
+canonical AIME run these values stay pinned; fine-tuned models use a separate
+endpoint YAML and must be labeled non-canonical:
 
 ```yaml
+evaluation:
+  label: qwen3.5-9b
+  canonical: true
 base_url: http://localhost:8000/v1
 model: qwen3.5-9b
 source_model: Qwen/Qwen3.5-9B
@@ -124,6 +129,191 @@ ship the task, define it under `tasks/<name>/` and point
 The config is the single source of truth: change settings there, never
 in ad-hoc commands, so every number in `results/summary.md` is
 reproducible from the YAML that produced it.
+
+## Evaluating a fine-tuned model
+
+You can evaluate any fine-tuned chat model that vLLM can expose through its
+OpenAI-compatible API. The model may be complete merged weights or a LoRA
+adapter. Keep `configs/aime.yaml` unchanged so the base and fine-tuned model
+use the same questions, prompt, 16 attempts, seeds, sampling, token cap, and
+rule-based grader.
+
+### 1. Serve the fine-tuned model
+
+Run vLLM on the GPU node. Port 8000 must be free; stop the canonical service
+first if it is currently running:
+
+```bash
+sudo systemctl stop vllm
+```
+
+For complete or merged model weights:
+
+```bash
+/home/ubuntu/vllm-env/bin/vllm serve \
+  /home/ubuntu/models/my-merged-model \
+  --served-model-name my-finetuned-model \
+  --reasoning-parser qwen3 \
+  --dtype bfloat16 \
+  --tensor-parallel-size 1 \
+  --host 127.0.0.1 \
+  --max-model-len 262144 \
+  --port 8000
+```
+
+For a LoRA adapter:
+
+```bash
+/home/ubuntu/vllm-env/bin/vllm serve Qwen/Qwen3.5-9B \
+  --revision BASE_MODEL_REVISION \
+  --enable-lora \
+  --lora-modules \
+    my-finetuned-model=/home/ubuntu/adapters/my-adapter \
+  --reasoning-parser qwen3 \
+  --dtype bfloat16 \
+  --tensor-parallel-size 1 \
+  --host 127.0.0.1 \
+  --max-model-len 262144 \
+  --port 8000
+```
+
+These examples use Qwen's `qwen3` reasoning parser. For another model family,
+use that family's supported vLLM parser or omit `--reasoning-parser`. Keep the
+vLLM process in the foreground for an initial test; use your own systemd unit
+or service manager after the command works. The checked-in
+`deploy-vllm-service.sh` remains specific to the canonical base Qwen service.
+
+On the GPU node, verify the server and find the exact model ID:
+
+```bash
+curl --fail http://127.0.0.1:8000/version
+curl --fail http://127.0.0.1:8000/v1/models
+```
+
+The name in the endpoint YAML's `model` field must exactly match an `id`
+returned by `/v1/models`.
+
+### 2. Connect from the evaluation machine
+
+If the evaluator is not running on the GPU node, open the private endpoint as
+local port 8000:
+
+```bash
+ssh -N \
+  -o ExitOnForwardFailure=yes \
+  -L 8000:127.0.0.1:8000 \
+  ubuntu@GPU_NODE
+```
+
+Keep that terminal open. In a second terminal, confirm that the endpoint is
+reachable through the tunnel:
+
+```bash
+curl --fail http://127.0.0.1:8000/version
+curl --fail http://127.0.0.1:8000/v1/models
+```
+
+### 3. Create one endpoint YAML
+
+Copy the example; do not edit the canonical endpoint:
+
+```bash
+cp configs/endpoint-finetuned.example.yaml \
+  configs/endpoint-my-model.yaml
+```
+
+Edit the copy:
+
+```yaml
+evaluation:
+  # Used in result directory names; lowercase and filesystem-safe.
+  label: my-finetuned-model
+  canonical: false
+
+base_url: http://localhost:8000/v1
+
+# Exact ID returned by GET /v1/models.
+model: my-finetuned-model
+
+# Immutable identity of the final model or adapter.
+source_model: my-org/my-finetuned-model
+model_revision: CHECKPOINT_COMMIT_OR_SHA256
+
+fine_tuning:
+  type: lora  # Use merged for complete model weights.
+  base_model: Qwen/Qwen3.5-9B
+  base_revision: BASE_MODEL_COMMIT
+  artifact: /home/ubuntu/adapters/my-adapter
+  training_data_disclosure: >-
+    Describe the training sources and whether AIME 2026 questions or
+    solutions were included.
+
+serving:
+  expected_vllm_version: 0.24.0
+  gpu: H100 80GB
+  gpus_used: 1
+  dtype: bfloat16
+  tensor_parallel_size: 1
+  max_model_len: 262144
+```
+
+Normally you change `evaluation.label`, `model`, `source_model`,
+`model_revision`, every field under `fine_tuning`, and any serving fields that
+differ from your deployment. The runner fails before generation if required
+provenance is missing, the label is unsafe, or `type` is not `lora` or
+`merged`.
+
+### 4. Dry-run, pilot, then evaluate
+
+First inspect the generated harness command without contacting the server:
+
+```bash
+uv run scripts/run_eval.py configs/aime.yaml \
+  --endpoint-config configs/endpoint-my-model.yaml \
+  --limit 3 \
+  --dry-run
+```
+
+Run the three-question, 48-completion pilot:
+
+```bash
+uv run scripts/run_eval.py configs/aime.yaml \
+  --endpoint-config configs/endpoint-my-model.yaml \
+  --limit 3
+```
+
+Inspect `attempts.jsonl`, `manifest.json`, and `report.md` in:
+
+```text
+results/raw/aime-my-finetuned-model-pilot-<timestamp>/
+```
+
+Only after the pilot has 16 attempts per question, no unexplained failures,
+and response variation, run all 30 questions and 480 completions:
+
+```bash
+uv run scripts/run_eval.py configs/aime.yaml \
+  --endpoint-config configs/endpoint-my-model.yaml
+```
+
+The full result is stored in:
+
+```text
+results/raw/aime-my-finetuned-model-<timestamp>/
+```
+
+Its report is labeled `NON-CANONICAL MODEL COMPARISON`. Compare its primary
+`avg@16` and secondary `pass@16` against a base-model run made with the same
+benchmark configuration, vLLM version, hardware, and serving precision.
+
+Always disclose the base revision, fine-tuning type, artifact revision or
+hash, hardware, training sources, and any AIME 2026 overlap. If AIME 2026
+questions or solutions were used during training, do not present the result as
+an independent generalization score.
+
+Never serve fine-tuned weights under the canonical `qwen3.5-9b` identity while
+leaving canonical metadata unchanged. That would incorrectly attribute the
+fine-tuned model's output to the base checkpoint.
 
 ## Where the AIME harness and prompts live
 

@@ -1,6 +1,9 @@
 # Canonical endpoint and serving provenance for the AIME investor run.
 # The endpoint is unauthenticated and stays private through the loopback
 # bind; remote clients reach it through an SSH tunnel.
+evaluation:
+  label: qwen3.5-9b
+  canonical: true
 base_url: http://localhost:8000/v1
 model: qwen3.5-9b
 source_model: Qwen/Qwen3.5-9B

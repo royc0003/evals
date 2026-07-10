@@ -90,6 +90,7 @@ def artifact_metadata() -> dict[str, object]:
         "run_id": "aime-2026-test",
         "timestamp_utc": "2026-07-09T20:00:00Z",
         "canonical": True,
+        "run_type": "canonical",
         "benchmark": "AIME 2026",
         "model": "Qwen/Qwen3.5-9B",
         "model_revision": "model-sha",
@@ -111,6 +112,30 @@ def artifact_metadata() -> dict[str, object]:
             "seeds_per_problem": list(range(2026, 2042)),
         },
     }
+
+
+def fine_tuned_artifact_metadata() -> dict[str, object]:
+    """Return provenance for a complete fine-tuned model comparison."""
+    metadata = artifact_metadata()
+    metadata.update(
+        {
+            "run_id": "aime-my-finetuned-model-test",
+            "canonical": False,
+            "run_type": "model-comparison",
+            "model": "my-org/my-finetuned-model",
+            "model_revision": "checkpoint-sha",
+            "endpoint_config_sha256": "endpoint-sha",
+            "fine_tuning": {
+                "type": "lora",
+                "base_model": "Qwen/Qwen3.5-9B",
+                "base_revision": "base-sha",
+                "artifact": "/models/my-finetuned-model",
+                "training_data_disclosure": "AIME 2026 was not used.",
+            },
+        }
+    )
+    del metadata["service_sha256"]
+    return metadata
 
 
 def test_summarize_attempts_reports_investor_metrics_and_diagnostics() -> None:
@@ -297,6 +322,7 @@ def test_write_run_artifacts_rejects_a_pilot_without_response_variation(
     )
     metadata = artifact_metadata()
     metadata["canonical"] = False
+    metadata["run_type"] = "pilot"
 
     with pytest.raises(ValueError, match="response variation"):
         reporting.write_run_artifacts(
@@ -317,6 +343,7 @@ def test_render_report_labels_pilots_without_a_canonical_headline() -> None:
     manifest: dict[str, object] = {
         "run_id": "aime-2026-pilot",
         "canonical": False,
+        "run_type": "pilot",
         "benchmark": "AIME 2026",
         "model": "Qwen/Qwen3.5-9B",
         "reference_score": 99.2,
@@ -333,3 +360,47 @@ def test_render_report_labels_pilots_without_a_canonical_headline() -> None:
     assert "75.0% diagnostic avg@16" in report
     assert reporting.METHODOLOGY_DISCLOSURE not in report
     assert "| AIME 2026 |" not in report
+
+
+def test_render_report_labels_a_complete_model_comparison() -> None:
+    """Report fine-tuned scores without presenting them as canonical."""
+    summary = reporting.summarize_attempts(
+        sample_records(),
+        attempts_per_problem=16,
+        expected_questions=2,
+    )
+    manifest = fine_tuned_artifact_metadata()
+    manifest["summary"] = summary
+
+    report = reporting.render_report(manifest)
+
+    assert "NON-CANONICAL MODEL COMPARISON" in report
+    assert "75.0% avg@16" in report
+    assert "100.0% pass@16" in report
+    assert "Training data disclosure" in report
+    assert "AIME 2026 was not used." in report
+    assert "endpoint-sha" in report
+    assert reporting.METHODOLOGY_DISCLOSURE in report
+    assert "| AIME 2026 |" not in report
+
+
+def test_model_comparison_does_not_require_pilot_response_variation(
+    tmp_path: Path,
+) -> None:
+    """Apply the variation gate only to limited diagnostic runs."""
+    records = sample_records()
+    for record in records:
+        if record["error"] is None:
+            record["response"] = formatted_response(42)
+    (tmp_path / "attempts.jsonl").write_text(
+        "".join(f"{json.dumps(record)}\n" for record in records)
+    )
+
+    manifest = reporting.write_run_artifacts(
+        tmp_path,
+        metadata=fine_tuned_artifact_metadata(),
+        attempts_per_problem=16,
+        expected_questions=2,
+    )
+
+    assert manifest["run_type"] == "model-comparison"

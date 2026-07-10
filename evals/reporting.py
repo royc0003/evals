@@ -252,7 +252,8 @@ def render_report(manifest: dict[str, object]) -> str:
         f"| Maximum | {_number(token_stats, 'maximum'):g} |\n"
     )
 
-    if manifest.get("canonical") is not True:
+    run_type_value = manifest.get("run_type")
+    if run_type_value == "pilot":
         return (
             f"# {benchmark} NON-CANONICAL PILOT\n\n"
             f"Diagnostic score: {avg_at_16:.1%} diagnostic avg@16.\n\n"
@@ -261,6 +262,45 @@ def render_report(manifest: dict[str, object]) -> str:
             "not eligible for the investor headline table.\n\n"
             f"{diagnostics}"
         )
+
+    if run_type_value == "model-comparison":
+        fine_tuning = manifest.get("fine_tuning")
+        endpoint_config_sha256 = manifest.get("endpoint_config_sha256")
+        if not isinstance(fine_tuning, dict):
+            raise ValueError(
+                "model-comparison manifest must contain fine_tuning"
+            )
+        if not isinstance(endpoint_config_sha256, str):
+            raise ValueError(
+                "model-comparison manifest must contain endpoint config hash"
+            )
+        training_disclosure = fine_tuning.get("training_data_disclosure")
+        if not isinstance(training_disclosure, str):
+            raise ValueError(
+                "model-comparison manifest must disclose training data"
+            )
+        return (
+            f"# {benchmark} NON-CANONICAL MODEL COMPARISON\n\n"
+            f"Score: {avg_at_16:.1%} avg@16.\n\n"
+            f"Secondary metric: {pass_at_16:.1%} pass@16 "
+            "(best-of-16).\n\n"
+            "This fine-tuned result is not eligible for the canonical GLM "
+            "headline table.\n\n"
+            f"> {METHODOLOGY_DISCLOSURE}\n\n"
+            f"{diagnostics}\n"
+            "## Fine-tuning provenance\n\n"
+            "| Component | Value |\n"
+            "|---|---|\n"
+            f"| Type | {fine_tuning.get('type')} |\n"
+            f"| Base model | {fine_tuning.get('base_model')} |\n"
+            f"| Base revision | {fine_tuning.get('base_revision')} |\n"
+            f"| Artifact | {fine_tuning.get('artifact')} |\n"
+            f"| Training data disclosure | {training_disclosure} |\n"
+            f"| Endpoint config SHA-256 | {endpoint_config_sha256} |\n"
+        )
+
+    if run_type_value != "canonical":
+        raise ValueError("manifest run_type is invalid")
 
     header = (
         "| Benchmark | Model | Ours | GLM-5.2 reported | Attempts | "
@@ -363,7 +403,7 @@ def write_run_artifacts(
         attempts_per_problem,
         expected_questions,
     )
-    if metadata.get("canonical") is False:
+    if metadata.get("run_type") == "pilot":
         attempt_summary = cast(dict[str, object], summary["attempts"])
         variation_count = int(
             _number(

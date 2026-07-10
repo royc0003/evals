@@ -141,9 +141,11 @@ tools with their own CLIs, run on the GPU node; see
 
 The canonical AIME command intentionally rejects a different model identity,
 revision, context, or serving topology. Do not overwrite those fields and
-reuse the investor protocol label for a LoRA or another checkpoint. Define a
-separate non-canonical benchmark configuration and disclosure before comparing
-other weights.
+reuse the investor protocol label for a LoRA or another checkpoint. Keep
+`configs/aime.yaml` unchanged, copy
+`configs/endpoint-finetuned.example.yaml`, and select the copy with
+`--endpoint-config`. The top-level README documents merged weights, LoRA
+serving, the endpoint YAML, and the pilot-to-full-run workflow.
 
 ## Troubleshooting
 
